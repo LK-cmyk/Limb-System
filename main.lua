@@ -1,15 +1,77 @@
 local Script = {}
 
-local CONFIG = {
-    EYE_HEIGHT = 1.6,
-    MAX_DIST = 100,
-    STEP_SIZE = 0.0075,
-    LEG_RATIO = 0.3,
-    HEAD_RATIO = 0.8,
-    ARM_START_RATIO = 0.4, -- 手臂起始高度
-    LATERAL_COEFF_HIGH = 0.4, -- 手臂区域横向偏移系数（×半宽）
-    LATERAL_COEFF_LOW = 0.5, -- 低高度区域横向偏移系数
-    LATERAL_COEFF_EXTREME = 0.7, -- 极外侧横向系数
+-- 组件属性定义
+Script.propertys = {
+    EYE_HEIGHT = {
+        type = Mini.Number,
+        default = 1.6,
+        displayName = "眼睛高度",
+        sort = 1,
+        tips = "摄像机或角色眼睛的默认高度",
+    },
+    MAX_DIST = {
+        type = Mini.Number,
+        default = 100,
+        displayName = "最大距离",
+        sort = 2,
+        tips = "检测或计算的最大距离限制",
+    },
+    STEP_SIZE = {
+        type = Mini.Number,
+        default = 0.0075,
+        displayName = "步长大小",
+        sort = 3,
+        tips = "迭代或移动的步进步长",
+        format = "%.4f",
+    },
+    LEG_RATIO = {
+        type = Mini.Number,
+        default = 0.3,
+        displayName = "腿部比例",
+        sort = 4,
+        tips = "腿部在整体模型中的占比系数",
+        format = "%.2f",
+    },
+    HEAD_RATIO = {
+        type = Mini.Number,
+        default = 0.8,
+        displayName = "头部比例",
+        sort = 5,
+        tips = "头部在整体模型中的占比系数",
+        format = "%.2f",
+    },
+    ARM_START_RATIO = {
+        type = Mini.Number,
+        default = 0.4,
+        displayName = "手臂起始高度比例",
+        sort = 6,
+        tips = "手臂开始生成的相对高度比例",
+        format = "%.2f",
+    },
+    LATERAL_COEFF_HIGH = {
+        type = Mini.Number,
+        default = 0.4,
+        displayName = "高区域横向系数",
+        sort = 7,
+        tips = "手臂区域横向偏移系数（×半宽）",
+        format = "%.2f",
+    },
+    LATERAL_COEFF_LOW = {
+        type = Mini.Number,
+        default = 0.5,
+        displayName = "低区域横向系数",
+        sort = 8,
+        tips = "低高度区域横向偏移系数",
+        format = "%.2f",
+    },
+    LATERAL_COEFF_EXTREME = {
+        type = Mini.Number,
+        default = 0.7,
+        displayName = "极外侧横向系数",
+        sort = 9,
+        tips = "极外侧横向偏移系数",
+        format = "%.2f",
+    },
 }
 
 --- 脚本入口
@@ -27,8 +89,8 @@ end
 --- @param excludeUin number @排除的玩家UIN
 --- @return table @所有潜在目标信息列表
 function Script:getAllTargets(centerX, centerY, centerZ, radius, excludeUin)
-    local targets = {}
-    local allPlayers = World:GetAllPlayers(-1)
+    local targets = {} -- 目标对象ID列表
+    local allPlayers = World:GetAllPlayers(-1) -- 全部玩家
     for _, uin in ipairs(allPlayers) do
         if uin ~= excludeUin and Actor:IsExist(uin) then
             local footX, footY, footZ = Actor:GetPosition(uin)
@@ -36,15 +98,15 @@ function Script:getAllTargets(centerX, centerY, centerZ, radius, excludeUin)
                 local dx = footX - centerX
                 local dy = footY - centerY
                 local dz = footZ - centerZ
-                if dx*dx + dy*dy + dz*dz <= radius*radius then
+                if dx * dx + dy * dy + dz * dz <= radius * radius then
                     table.insert(targets, {id = uin, type = "player"})
                 end
             end
         end
     end
-    local posBeg = {x = centerX - radius, y = centerY - radius, z = centerZ - radius}
-    local posEnd = {x = centerX + radius, y = centerY + radius, z = centerZ + radius}
-    local creatures = Area:GetAllCreaturesInAreaRange(posBeg, posEnd)
+    local posBeg = {x = centerX - radius, y = centerY - radius, z = centerZ - radius} -- 包围盒起点坐标
+    local posEnd = {x = centerX + radius, y = centerY + radius, z = centerZ + radius} -- 包围盒终点坐标
+    local creatures = Area:GetAllCreaturesInAreaRange(posBeg, posEnd) -- 获取范围内所有对象ID
     if creatures then
         for _, mobId in ipairs(creatures) do
             if Actor:IsExist(mobId) then
@@ -88,10 +150,10 @@ function Script:onPlayerAttackHit(event)
     self.lastFireTime = now
 
     local playerUin = event.eventobjid
-    if not playerUin or not Actor:IsExist(playerUin) then return end
+    if not Actor:IsExist(playerUin) then return end
 
     local eyeX, eyeY, eyeZ = Actor:GetPosition(playerUin)
-    eyeY = eyeY + CONFIG.EYE_HEIGHT
+    eyeY = eyeY + self.EYE_HEIGHT
     local dir = Player:GetAimDir(playerUin)
     if not dir then return end
     local len = math.sqrt(dir.x * dir.x + dir.y * dir.y + dir.z * dir.z)
@@ -104,8 +166,8 @@ function Script:onPlayerAttackHit(event)
     end
 
     local origin = {x = eyeX, y = eyeY, z = eyeZ}
-    local maxDist = CONFIG.MAX_DIST
-    local step = CONFIG.STEP_SIZE
+    local maxDist = self.MAX_DIST
+    local step = self.STEP_SIZE
 
     local targets = self:getAllTargets(eyeX, eyeY, eyeZ, maxDist, playerUin)
     local targetInfos = {}
@@ -186,8 +248,6 @@ end
 --- @return string @攻击部位名称
 function Script:getHitBodyPart(objId, hitX, hitY, hitZ, modelHeightM, halfWidth)
     local footX, footY, footZ = Actor:GetPosition(objId)
-    if not footX then return "未知" end
-
     local ratio = (hitY - footY) / modelHeightM
     local dx = hitX - footX
     local dz = hitZ - footZ
@@ -203,28 +263,28 @@ function Script:getHitBodyPart(objId, hitX, hitY, hitZ, modelHeightM, halfWidth)
     local dot = dx * rightX + dz * rightZ   -- 用于左右臂区分
 
     -- 优先判定头部和腿部（不受横向偏移干扰）
-    if ratio >= CONFIG.HEAD_RATIO then
+    if ratio >= self.HEAD_RATIO then
         return "头部"
     end
-    if ratio < CONFIG.LEG_RATIO then
+    if ratio < self.LEG_RATIO then
         return "腿部"
     end
 
     -- 极外侧判定（手臂明显伸出）
-    if lateralDist > halfWidth * CONFIG.LATERAL_COEFF_EXTREME then
+    if lateralDist > halfWidth * self.LATERAL_COEFF_EXTREME then
         return dot > 0 and "右臂" or "左臂"
     end
 
     -- 正常高度手臂区域
-    if ratio >= CONFIG.ARM_START_RATIO then
-        if lateralDist < halfWidth * CONFIG.LATERAL_COEFF_HIGH then
+    if ratio >= self.ARM_START_RATIO then
+        if lateralDist < halfWidth * self.LATERAL_COEFF_HIGH then
             return "躯干"
         end
         return dot > 0 and "右臂" or "左臂"
     end
 
     -- 低高度区域（下垂手臂）
-    if lateralDist > halfWidth * CONFIG.LATERAL_COEFF_LOW then
+    if lateralDist > halfWidth * self.LATERAL_COEFF_LOW then
         return dot > 0 and "右臂" or "左臂"
     else
         return "躯干"
