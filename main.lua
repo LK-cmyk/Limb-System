@@ -6,19 +6,27 @@ local CONFIG = {
     STEP_SIZE = 0.0075,
     LEG_RATIO = 0.3,
     HEAD_RATIO = 0.8,
-    ARM_START_RATIO = 0.4,        -- 手臂起始高度
-    LATERAL_COEFF_HIGH = 0.4,     -- 手臂区域横向偏移系数（×半宽）
-    LATERAL_COEFF_LOW = 0.5,      -- 低高度区域横向偏移系数
-    LATERAL_COEFF_EXTREME = 0.7,  -- 极外侧横向系数
+    ARM_START_RATIO = 0.4, -- 手臂起始高度
+    LATERAL_COEFF_HIGH = 0.4, -- 手臂区域横向偏移系数（×半宽）
+    LATERAL_COEFF_LOW = 0.5, -- 低高度区域横向偏移系数
+    LATERAL_COEFF_EXTREME = 0.7, -- 极外侧横向系数
 }
 
+--- 脚本入口
+--- @return nil @无返回
 function Script:OnStart()
     self.lastFireTime = 0
-    self:AddTriggerEvent(TriggerEvent.PlayerGunAction, self.OnPlayerGunAction)
+    self:AddTriggerEvent(TriggerEvent.PlayerAttackHit, self.onPlayerAttackHit)
 end
 
--- 获取视野内所有潜在目标（玩家+生物）
-function Script:GetAllTargets(centerX, centerY, centerZ, radius, excludeUin)
+--- 获取视野内所有潜在目标（玩家+生物）
+--- @param centerX number @视野中心X坐标
+--- @param centerY number @视野中心Y坐标
+--- @param centerZ number @视野中心Z坐标
+--- @param radius number @视野半径
+--- @param excludeUin number @排除的玩家UIN
+--- @return table @所有潜在目标信息列表
+function Script:getAllTargets(centerX, centerY, centerZ, radius, excludeUin)
     local targets = {}
     local allPlayers = World:GetAllPlayers(-1)
     for _, uin in ipairs(allPlayers) do
@@ -47,23 +55,34 @@ function Script:GetAllTargets(centerX, centerY, centerZ, radius, excludeUin)
     return targets
 end
 
-function Script:RayIntersectAABB(origin, dir, minX, minY, minZ, maxX, maxY, maxZ)
+--- 射线与轴对齐包围盒相交
+--- @param origin table @射线起点坐标 {x, y, z}
+--- @param dir table @射线方向向量 {x, y, z}
+--- @param minX number @包围盒最小X坐标
+--- @param minY number @包围盒最小Y坐标
+--- @param minZ number @包围盒最小Z坐标
+--- @param maxX number @包围盒最大X坐标
+--- @param maxY number @包围盒最大Y坐标
+--- @param maxZ number @包围盒最大Z坐标
+--- @return number|nil @相交距离，如果没有相交则返回nil
+function Script:rayIntersectAABB(origin, dir, minX, minY, minZ, maxX, maxY, maxZ)
+    local max, min = math.max, math.min
     local t1 = (minX - origin.x) / dir.x
     local t2 = (maxX - origin.x) / dir.x
     local t3 = (minY - origin.y) / dir.y
     local t4 = (maxY - origin.y) / dir.y
     local t5 = (minZ - origin.z) / dir.z
     local t6 = (maxZ - origin.z) / dir.z
-    local tmin = math.max(math.min(t1, t2), math.min(t3, t4), math.min(t5, t6))
-    local tmax = math.min(math.max(t1, t2), math.max(t3, t4), math.max(t5, t6))
+    local tmin = max(min(t1, t2), min(t3, t4), min(t5, t6))
+    local tmax = min(max(t1, t2), max(t3, t4), max(t5, t6))
     if tmax < 0 or tmin > tmax then return nil end
     return tmin
 end
 
-function Script:OnPlayerGunAction(event)
-    local gunAction = event.gunAction
-    if gunAction ~= GunAction.Fire and gunAction ~= GunAction.AimFire then return end
-
+--- 玩家枪械动作处理
+--- @param event table @事件参数
+--- @return nil @无返回
+function Script:onPlayerAttackHit(event)
     local now = os.timeMs()
     if now - self.lastFireTime < 100 then return end
     self.lastFireTime = now
@@ -88,7 +107,7 @@ function Script:OnPlayerGunAction(event)
     local maxDist = CONFIG.MAX_DIST
     local step = CONFIG.STEP_SIZE
 
-    local targets = self:GetAllTargets(eyeX, eyeY, eyeZ, maxDist, playerUin)
+    local targets = self:getAllTargets(eyeX, eyeY, eyeZ, maxDist, playerUin)
     local targetInfos = {}
     for _, target in ipairs(targets) do
         local objId = target.id
@@ -105,7 +124,7 @@ function Script:OnPlayerGunAction(event)
                 local maxY = footY + heightM
                 local minZ = footZ - halfDepth
                 local maxZ = footZ + halfDepth
-                local t = self:RayIntersectAABB(origin, dir, minX, minY, minZ, maxX, maxY, maxZ)
+                local t = self:rayIntersectAABB(origin, dir, minX, minY, minZ, maxX, maxY, maxZ)
                 if t and t > 0 and t <= maxDist then
                     table.insert(targetInfos, {
                         id = objId,
@@ -152,12 +171,20 @@ function Script:OnPlayerGunAction(event)
 
     if not bestHit then return end
 
-    local part = self:GetHitBodyPart(bestHit.id, bestHit.x, bestHit.y, bestHit.z, bestHit.heightM, bestHit.halfWidth)
+    local part = self:getHitBodyPart(bestHit.id, bestHit.x, bestHit.y, bestHit.z, bestHit.heightM, bestHit.halfWidth)
     print(string.format("玩家 %d 开枪击中 %d 的 %s (击中点: %.4f, %.4f, %.4f)", 
         playerUin, bestHit.id, part, bestHit.x, bestHit.y, bestHit.z))
 end
 
-function Script:GetHitBodyPart(objId, hitX, hitY, hitZ, modelHeightM, halfWidth)
+--- 获取攻击部位
+--- @param objId number @目标对象ID
+--- @param hitX number @击中点X坐标
+--- @param hitY number @击中点Y坐标
+--- @param hitZ number @击中点Z坐标
+--- @param modelHeightM number @模型高度（米）
+--- @param halfWidth number @模型半宽（米）
+--- @return string @攻击部位名称
+function Script:getHitBodyPart(objId, hitX, hitY, hitZ, modelHeightM, halfWidth)
     local footX, footY, footZ = Actor:GetPosition(objId)
     if not footX then return "未知" end
 
