@@ -90,6 +90,12 @@ Script.propertys = {
     },
 }
 
+-- 该表内的方块 ID 将按次数被忽略
+Script.blockWhitelist = {
+    -- 示例：[1] = 3, -- 方块 ID 1 忽略 3 次
+    -- 添加需要忽略的方块 ID 及忽略次数
+}
+
 --- 脚本入口
 --- @return nil @无返回
 function Script:OnStart()
@@ -157,6 +163,14 @@ function Script:rayIntersectAABB(origin, dir, minX, minY, minZ, maxX, maxY, maxZ
     return tmin
 end
 
+--- 判断方块是否在白名单中
+--- @param blockId number @方块 ID
+--- @return boolean @是否被忽略
+function Script:isBlockWhitelisted(blockId)
+    local count = self.blockWhitelist[blockId]
+    return type(count) == "number" and count > 0
+end
+
 --- 判断射线到指定距离内是否被方块阻挡
 --- @param origin table @射线起点坐标 {x, y, z}
 --- @param dir table @单位方向向量 {x, y, z}
@@ -181,10 +195,24 @@ function Script:isBlockedByBlocks(origin, dir, maxT)
     local tMaxY = dir.y ~= 0 and ((nextBoundaryY - y) / dir.y) or math.huge
     local tMaxZ = dir.z ~= 0 and ((nextBoundaryZ - z) / dir.z) or math.huge
 
+    local whitelistCounts = {}
+    for blockId, count in pairs(self.blockWhitelist) do
+        whitelistCounts[blockId] = count
+    end
+
+    local function isWhitelisted(blockId)
+        local count = whitelistCounts[blockId]
+        if type(count) == "number" and count > 0 then
+            whitelistCounts[blockId] = count - 1
+            return true
+        end
+        return false
+    end
+
     local t = 0
     while t <= maxT do
         local blockId = Block:GetBlockID(ix + 0.5, iy + 0.5, iz + 0.5)
-        if blockId and blockId ~= 0 then
+        if blockId and blockId ~= 0 and not isWhitelisted(blockId) then
             return true
         end
 
