@@ -82,7 +82,7 @@ Script.propertys = {
     },
     LATERAL_COEFF_EXTREME = {
         type = Mini.Number,
-        default = 0.8,
+        default = 1.2,
         displayName = "极外侧横向系数",
         sort = 11,
         tips = "极外侧横向偏移系数",
@@ -157,6 +157,63 @@ function Script:rayIntersectAABB(origin, dir, minX, minY, minZ, maxX, maxY, maxZ
     return tmin
 end
 
+--- 判断射线到指定距离内是否被方块阻挡
+--- @param origin table @射线起点坐标 {x, y, z}
+--- @param dir table @单位方向向量 {x, y, z}
+--- @param maxT number @最大检测距离
+--- @return boolean @是否被阻挡
+function Script:isBlockedByBlocks(origin, dir, maxT)
+    local x, y, z = origin.x, origin.y, origin.z
+    local ix, iy, iz = math.floor(x), math.floor(y), math.floor(z)
+    local stepX = dir.x > 0 and 1 or -1
+    local stepY = dir.y > 0 and 1 or -1
+    local stepZ = dir.z > 0 and 1 or -1
+
+    local tDeltaX = dir.x ~= 0 and math.abs(1 / dir.x) or math.huge
+    local tDeltaY = dir.y ~= 0 and math.abs(1 / dir.y) or math.huge
+    local tDeltaZ = dir.z ~= 0 and math.abs(1 / dir.z) or math.huge
+
+    local nextBoundaryX = ix + (stepX > 0 and 1 or 0)
+    local nextBoundaryY = iy + (stepY > 0 and 1 or 0)
+    local nextBoundaryZ = iz + (stepZ > 0 and 1 or 0)
+
+    local tMaxX = dir.x ~= 0 and ((nextBoundaryX - x) / dir.x) or math.huge
+    local tMaxY = dir.y ~= 0 and ((nextBoundaryY - y) / dir.y) or math.huge
+    local tMaxZ = dir.z ~= 0 and ((nextBoundaryZ - z) / dir.z) or math.huge
+
+    local t = 0
+    while t <= maxT do
+        local blockId = Block:GetBlockID(ix + 0.5, iy + 0.5, iz + 0.5)
+        if blockId and blockId ~= 0 then
+            return true
+        end
+
+        if tMaxX < tMaxY then
+            if tMaxX < tMaxZ then
+                ix = ix + stepX
+                t = tMaxX
+                tMaxX = tMaxX + tDeltaX
+            else
+                iz = iz + stepZ
+                t = tMaxZ
+                tMaxZ = tMaxZ + tDeltaZ
+            end
+        else
+            if tMaxY < tMaxZ then
+                iy = iy + stepY
+                t = tMaxY
+                tMaxY = tMaxY + tDeltaY
+            else
+                iz = iz + stepZ
+                t = tMaxZ
+                tMaxZ = tMaxZ + tDeltaZ
+            end
+        end
+    end
+
+    return false
+end
+
 --- 玩家枪械动作处理
 --- @param event table @事件参数
 --- @return nil @无返回
@@ -164,92 +221,90 @@ function Script:onPlayerAttackHit(event)
     local now = os.timeMs()
     if now - self.lastFireTime < 100 then return end
     self.lastFireTime = now
-    local playerUin = event.eventobjid
 
+    local playerUin = event.eventobjid
     local eyeX, eyeY, eyeZ = Actor:GetPosition(playerUin)
+    if not eyeX then return end
     eyeY = eyeY + self.EYE_HEIGHT
+
     local dir = Player:GetAimDir(playerUin)
     local len = math.sqrt(dir.x * dir.x + dir.y * dir.y + dir.z * dir.z)
-    if len > 0 then
-        dir.x = dir.x / len
-        dir.y = dir.y / len
-        dir.z = dir.z / len
-    else
-        return
-    end
+    if len <= 0.0001 then return end
+    dir.x, dir.y, dir.z = dir.x / len, dir.y / len, dir.z / len
 
     local origin = {x = eyeX, y = eyeY, z = eyeZ}
     local maxDist = self.MAX_DIST
-    local step = self.STEP_SIZE
 
     local targets = self:getAllTargets(eyeX, eyeY, eyeZ, maxDist, playerUin)
     local targetInfos = {}
+
     for _, target in ipairs(targets) do
         local objId = target.id
         local footX, footY, footZ = Actor:GetPosition(objId)
         if footX then
-            local bound = Actor:GetBoundSzie(objId)
-            if bound then
-                local heightM = bound.y / 100
-                local halfWidth = bound.x / 2 / 100
-                local halfDepth = bound.z / 2 / 100
-                local minX = footX - halfWidth
-                local maxX = footX + halfWidth
-                local minY = footY
-                local maxY = footY + heightM
-                local minZ = footZ - halfDepth
-                local maxZ = footZ + halfDepth
-                local t = self:rayIntersectAABB(origin, dir, minX, minY, minZ, maxX, maxY, maxZ)
-                if t and t > 0 and t <= maxDist then
-                    table.insert(targetInfos, {
-                        id = objId,
-                        t = t,
-                        minX = minX, maxX = maxX,
-                        minY = minY, maxY = maxY,
-                        minZ = minZ, maxZ = maxZ,
-                        heightM = heightM,
-                        halfWidth = halfWidth
-                    })
-                end
+            local heightM = 2.0
+            local halfWidth = 0.6
+            local halfDepth = 0.6
+
+            local minX, maxX = footX - halfWidth, footX + halfWidth
+            local minY, maxY = footY, footY + heightM
+            local minZ, maxZ = footZ - halfDepth, footZ + halfDepth
+
+            local t = self:rayIntersectAABB(origin, dir, minX, minY, minZ, maxX, maxY, maxZ)
+            if t and t > 0 and t <= maxDist then
+                table.insert(targetInfos, {
+                    id = objId,
+                    t = t,
+                    minX = minX, maxX = maxX,
+                    minY = minY, maxY = maxY,
+                    minZ = minZ, maxZ = maxZ,
+                    heightM = heightM,
+                    halfWidth = halfWidth
+                })
             end
         end
     end
 
+    if #targetInfos == 0 then return end
     table.sort(targetInfos, function(a, b) return a.t < b.t end)
 
     local bestHit = nil
     for _, info in ipairs(targetInfos) do
-        local blocked = false
-        local t_step = 0
-        while t_step <= info.t do
-            local x = origin.x + dir.x * t_step
-            local y = origin.y + dir.y * t_step
-            local z = origin.z + dir.z * t_step
-            local blockId = Block:GetBlockID(x, y, z)
-            if blockId and blockId ~= 0 then
-                blocked = true
-                break
-            end
-            t_step = t_step + step
-        end
-        if not blocked then
+        local safeT = math.max(info.t - 0.2, 0)
+        if not self:isBlockedByBlocks(origin, dir, safeT) then
             local hitX = origin.x + dir.x * info.t
             local hitY = origin.y + dir.y * info.t
             local hitZ = origin.z + dir.z * info.t
-            hitX = math.max(info.minX, math.min(info.maxX, hitX))
-            hitY = math.max(info.minY, math.min(info.maxY, hitY))
-            hitZ = math.max(info.minZ, math.min(info.maxZ, hitZ))
-            bestHit = {id = info.id, x = hitX, y = hitY, z = hitZ, heightM = info.heightM, halfWidth = info.halfWidth}
+
+            local eps = 0.01
+            hitX = math.max(info.minX + eps, math.min(info.maxX - eps, hitX))
+            hitY = math.max(info.minY + eps, math.min(info.maxY - eps, hitY))
+            hitZ = math.max(info.minZ + eps, math.min(info.maxZ - eps, hitZ))
+
+            bestHit = {
+                id = info.id,
+                x = hitX, y = hitY, z = hitZ,
+                heightM = info.heightM,
+                halfWidth = info.halfWidth
+            }
             break
         end
     end
 
-    if not bestHit then return end
+    if bestHit then
+        local part, ratio, lateralDist =
+            self:getHitBodyPart(bestHit.id, bestHit.x, bestHit.y, bestHit.z, bestHit.heightM, bestHit.halfWidth)
 
-    -- 获取部位、比例、横向偏移
-    local part, ratio, lateralDist = self:getHitBodyPart(bestHit.id, bestHit.x, bestHit.y, bestHit.z, bestHit.heightM, bestHit.halfWidth)
-    print(string.format("玩家 %d 开枪击中 %d 的 %s (击中点: %.4f, %.4f, %.4f) 比例: %.4f 横向: %.4f", 
-        playerUin, bestHit.id, part, bestHit.x, bestHit.y, bestHit.z, ratio, lateralDist))
+        -- ✅ 只输出命中信息
+        print(string.format(
+            "玩家 %d 攻击了 %d 的 %s | 纵向比例: %.2f | 横向距离: %.2f",
+            playerUin,
+            bestHit.id,
+            part,
+            ratio,
+            lateralDist
+        ))
+    end
 end
 
 function Script:getHitBodyPart(objId, hitX, hitY, hitZ, modelHeightM, halfWidth)
@@ -267,43 +322,50 @@ function Script:getHitBodyPart(objId, hitX, hitY, hitZ, modelHeightM, halfWidth)
     local lateralDist = math.abs(dx * rightX + dz * rightZ)
     local dot = dx * rightX + dz * rightZ
 
-    -- 优先头部和腿部
+    -- 优先级: 头部 > 手臂 > 躯干 > 腹部 > 腿部
+
+    -- 1. 头部
     if ratio >= self.HEAD_RATIO then
         return "头部", ratio, lateralDist
     end
-    if ratio < self.LEG_RATIO then
-        return "腿部", ratio, lateralDist
-    end
 
-    -- 极外侧判定（手臂明显伸出）
+    -- 2. 手臂（左/右）
+    local isArm = false
+    -- 极外侧（手臂明显伸出）
     if lateralDist > halfWidth * self.LATERAL_COEFF_EXTREME then
-        return (dot > 0 and "右臂" or "左臂"), ratio, lateralDist
+        isArm = true
+    -- 手臂高度区域，横向距离超过阈值
+    elseif ratio >= self.ARM_START_RATIO and lateralDist >= halfWidth * self.LATERAL_COEFF_HIGH then
+        isArm = true
+    -- 低高度区域（下垂手臂），且不低于腿部范围
+    elseif lateralDist > halfWidth * self.LATERAL_COEFF_LOW and ratio >= self.LEG_RATIO then
+        isArm = true
     end
 
-    -- 正常手臂高度区域
-    if ratio >= self.ARM_START_RATIO then
-        if lateralDist < halfWidth * self.LATERAL_COEFF_HIGH then
-            -- 不是手臂，进入躯干细分（腹部 vs 其他躯干）
-            if ratio >= self.ABDOMEN_MIN_RATIO and ratio <= self.ABDOMEN_MAX_RATIO then
-                return "腹部", ratio, lateralDist
-            else
-                return "躯干", ratio, lateralDist
-            end
-        end
-        return (dot > 0 and "右臂" or "左臂"), ratio, lateralDist
+    if isArm then
+        local armSide = dot > 0 and "右臂" or "左臂"
+        return armSide, ratio, lateralDist
     end
 
-    -- 低高度区域（下垂手臂）
-    if lateralDist > halfWidth * self.LATERAL_COEFF_LOW then
-        return (dot > 0 and "右臂" or "左臂"), ratio, lateralDist
-    else
-        -- 非手臂低区域（如腰部以下但仍高于腿部）也进行腹部判定
+    -- 3. 躯干（不包含腹部区间）
+    if ratio >= self.LEG_RATIO and ratio < self.HEAD_RATIO then
         if ratio >= self.ABDOMEN_MIN_RATIO and ratio <= self.ABDOMEN_MAX_RATIO then
-            return "腹部", ratio, lateralDist
+            -- 是腹部区域，跳过，交给腹部判定
         else
             return "躯干", ratio, lateralDist
         end
     end
+
+    -- 4. 腹部
+    if ratio >= self.ABDOMEN_MIN_RATIO and ratio <= self.ABDOMEN_MAX_RATIO then
+        return "腹部", ratio, lateralDist
+    end
+
+    -- 5. 腿部
+    if ratio < self.LEG_RATIO then
+        return "腿部", ratio, lateralDist
+    end
+    return "躯干", ratio, lateralDist
 end
 
 return Script
