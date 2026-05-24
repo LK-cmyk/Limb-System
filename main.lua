@@ -1,4 +1,5 @@
 local Script = {}
+local blockWhitelist = {}
 
 -- 组件属性
 Script.propertys = {
@@ -90,15 +91,15 @@ Script.propertys = {
     },
 }
 
--- 该表内的方块 ID 将按次数被忽略
-Script.blockWhitelist = {
-    -- 示例：[1] = 3, -- 方块 ID 1 忽略 3 次
-    -- 添加需要忽略的方块 ID 及忽略次数
-}
-
 --- 脚本入口
 --- @return nil @无返回
 function Script:OnStart()
+    -- 该表内的方块 ID 将按次数被忽略
+    blockWhitelist = {
+        -- 示例：[1] = 3, -- 方块 ID 1 忽略 3 次
+        -- 添加需要忽略的方块 ID 及忽略次数
+        [100] = 5,
+    }
     self.lastFireTime = 0
     self:AddTriggerEvent(TriggerEvent.PlayerAttackHit, self.onPlayerAttackHit)
 end
@@ -167,7 +168,7 @@ end
 --- @param blockId number @方块 ID
 --- @return boolean @是否被忽略
 function Script:isBlockWhitelisted(blockId)
-    local count = self.blockWhitelist[blockId]
+    local count = blockWhitelist[blockId]
     return type(count) == "number" and count > 0
 end
 
@@ -195,8 +196,9 @@ function Script:isBlockedByBlocks(origin, dir, maxT)
     local tMaxY = dir.y ~= 0 and ((nextBoundaryY - y) / dir.y) or math.huge
     local tMaxZ = dir.z ~= 0 and ((nextBoundaryZ - z) / dir.z) or math.huge
 
+    local whitelist = blockWhitelist or {}
     local whitelistCounts = {}
-    for blockId, count in pairs(self.blockWhitelist) do
+    for blockId, count in pairs(whitelist) do
         whitelistCounts[blockId] = count
     end
 
