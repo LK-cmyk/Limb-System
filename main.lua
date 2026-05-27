@@ -119,20 +119,13 @@ Script.propertys = {
         sort = 13,
         tips = "启用后射线碰到方块将不再停止",
     },
-    DEBUG = {
-        type = Mini.Bool,
-        default = false,
-        displayName = "显示调试信息",
-        sort = 14,
-        tips = "启用后会在控制台输出详细的命中信息",
-    },
 }
 
 local _VAR_STRUCT = {
     DATA = {
         lastFireTime = 0,
-        lastBlockNum = 0
-    }
+        lastBlockNum = 0,
+    },
 }
 
 --- 脚本入口
@@ -146,7 +139,7 @@ function Script:OnStart()
         LogSys:Error("未找到变量组件", "Script:OnStart")
         return
     end
-    if not LogSys then 
+    if not LogSys then
         LogSys:Error("未找到日志组件", "Script:OnStart")
         return
     end
@@ -187,18 +180,18 @@ function Script:getAllTargets(centerX, centerY, centerZ, radius, excludeUin)
                 local dy = footY - centerY
                 local dz = footZ - centerZ
                 if dx * dx + dy * dy + dz * dz <= radius * radius then
-                    table.insert(targets, {id = uin, type = "player"})
+                    table.insert(targets, { id = uin, type = "player" })
                 end
             end
         end
     end
-    local posBeg = {x = centerX - radius, y = centerY - radius, z = centerZ - radius}
-    local posEnd = {x = centerX + radius, y = centerY + radius, z = centerZ + radius}
+    local posBeg = { x = centerX - radius, y = centerY - radius, z = centerZ - radius }
+    local posEnd = { x = centerX + radius, y = centerY + radius, z = centerZ + radius }
     local creatures = Area:GetAllCreaturesInAreaRange(posBeg, posEnd)
     if creatures then
         for _, mobId in ipairs(creatures) do
             if Actor:IsExist(mobId) then
-                table.insert(targets, {id = mobId, type = "mob"})
+                table.insert(targets, { id = mobId, type = "mob" })
             end
         end
     end
@@ -225,7 +218,9 @@ function Script:rayIntersectAABB(origin, dir, minX, minY, minZ, maxX, maxY, maxZ
     local t6 = (maxZ - origin.z) / dir.z
     local tmin = max(min(t1, t2), min(t3, t4), min(t5, t6))
     local tmax = min(max(t1, t2), max(t3, t4), max(t5, t6))
-    if tmax < 0 or tmin > tmax then return nil end
+    if tmax < 0 or tmin > tmax then
+        return nil
+    end
     return tmin
 end
 
@@ -250,18 +245,24 @@ end
 --- @param maxDist number @最大检测距离
 --- @return number @白名单方块数量（去重）
 function Script:countWhitelistBlocksInSight(playerUin, maxDist)
-    if not Actor:IsExist(playerUin) then return 0 end
+    if not Actor:IsExist(playerUin) then
+        return 0
+    end
 
     local eyeX, eyeY, eyeZ = Actor:GetPosition(playerUin)
-    if not eyeX then return 0 end
+    if not eyeX then
+        return 0
+    end
     eyeY = eyeY + self.EYE_HEIGHT
 
     local dir = Player:GetAimDir(playerUin)
     local len = math.sqrt(dir.x * dir.x + dir.y * dir.y + dir.z * dir.z)
-    if len <= 0.0001 then return 0 end
+    if len <= 0.0001 then
+        return 0
+    end
     dir.x, dir.y, dir.z = dir.x / len, dir.y / len, dir.z / len
 
-    local origin = {x = eyeX, y = eyeY, z = eyeZ}
+    local origin = { x = eyeX, y = eyeY, z = eyeZ }
     local x, y, z = origin.x, origin.y, origin.z
     local ix, iy, iz = math.floor(x), math.floor(y), math.floor(z)
 
@@ -281,7 +282,7 @@ function Script:countWhitelistBlocksInSight(playerUin, maxDist)
     local tMaxY = dir.y ~= 0 and ((nextBoundaryY - y) / dir.y) or math.huge
     local tMaxZ = dir.z ~= 0 and ((nextBoundaryZ - z) / dir.z) or math.huge
 
-    local whitelistBlocks = {}   -- 用于去重，key = "x,y,z"
+    local whitelistBlocks = {} -- 用于去重，key = "x,y,z"
     local t = 0
     while t <= maxDist do
         local blockId = Block:GetBlockID(ix + 0.5, iy + 0.5, iz + 0.5)
@@ -314,7 +315,9 @@ function Script:countWhitelistBlocksInSight(playerUin, maxDist)
     end
 
     local count = 0
-    for _ in pairs(whitelistBlocks) do count = count + 1 end
+    for _ in pairs(whitelistBlocks) do
+        count = count + 1
+    end
 
     local maxIgnoreCount = 0
     for _, ignoreCount in pairs(blockWhitelist or {}) do
@@ -360,7 +363,9 @@ function Script:isBlockedByBlocks(origin, dir, maxT)
     end
 
     local function isWhitelisted(blockId)
-        if not self.whitelistEnabled then return false end
+        if not self.whitelistEnabled then
+            return false
+        end
         local count = whitelistCounts[blockId]
         if type(count) == "number" and count > 0 then
             whitelistCounts[blockId] = count - 1
@@ -410,19 +415,25 @@ function Script:onPlayerAttackHit(event)
     local playerUin = event.eventobjid
 
     local cmpStructData = PlrDataMgr:GetPlrCmpStructData(playerUin, "limbSysCmp", "DATA")
-    if now - cmpStructData.lastFireTime < 100 then return end
+    if now - cmpStructData.lastFireTime < 100 then
+        return
+    end
     cmpStructData.lastFireTime = now
 
     local eyeX, eyeY, eyeZ = Actor:GetPosition(playerUin)
-    if not eyeX then return end
+    if not eyeX then
+        return
+    end
     eyeY = eyeY + self.EYE_HEIGHT
 
     local dir = Player:GetAimDir(playerUin)
     local len = math.sqrt(dir.x * dir.x + dir.y * dir.y + dir.z * dir.z)
-    if len <= 0.0001 then return end
+    if len <= 0.0001 then
+        return
+    end
     dir.x, dir.y, dir.z = dir.x / len, dir.y / len, dir.z / len
 
-    local origin = {x = eyeX, y = eyeY, z = eyeZ}
+    local origin = { x = eyeX, y = eyeY, z = eyeZ }
     local maxDist = self.MAX_DIST
 
     local targets = self:getAllTargets(eyeX, eyeY, eyeZ, maxDist, playerUin)
@@ -445,18 +456,25 @@ function Script:onPlayerAttackHit(event)
                 table.insert(targetInfos, {
                     id = objId,
                     t = t,
-                    minX = minX, maxX = maxX,
-                    minY = minY, maxY = maxY,
-                    minZ = minZ, maxZ = maxZ,
+                    minX = minX,
+                    maxX = maxX,
+                    minY = minY,
+                    maxY = maxY,
+                    minZ = minZ,
+                    maxZ = maxZ,
                     heightM = heightM,
-                    halfWidth = halfWidth
+                    halfWidth = halfWidth,
                 })
             end
         end
     end
 
-    if #targetInfos == 0 then return end
-    table.sort(targetInfos, function(a, b) return a.t < b.t end)
+    if #targetInfos == 0 then
+        return
+    end
+    table.sort(targetInfos, function(a, b)
+        return a.t < b.t
+    end)
 
     local bestHit = nil
     for _, info in ipairs(targetInfos) do
@@ -473,9 +491,11 @@ function Script:onPlayerAttackHit(event)
 
             bestHit = {
                 id = info.id,
-                x = hitX, y = hitY, z = hitZ,
+                x = hitX,
+                y = hitY,
+                z = hitZ,
                 heightM = info.heightM,
-                halfWidth = info.halfWidth
+                halfWidth = info.halfWidth,
             }
             break
         end
@@ -485,14 +505,17 @@ function Script:onPlayerAttackHit(event)
         local part, ratio, lateralDist =
             self:getHitBodyPart(bestHit.id, bestHit.x, bestHit.y, bestHit.z, bestHit.heightM, bestHit.halfWidth)
 
-        LogSys:Debug(string.format(
-            "玩家 %d 攻击了 %d 的 %s | 纵向比例: %.2f | 横向距离: %.2f",
-            playerUin,
-            bestHit.id,
-            part,
-            ratio,
-            lateralDist
-        ), "Script:onPlayerAttackHit")
+        LogSys:Debug(
+            string.format(
+                "玩家 %d 攻击了 %d 的 %s | 纵向比例: %.2f | 横向距离: %.2f",
+                playerUin,
+                bestHit.id,
+                part,
+                ratio,
+                lateralDist
+            ),
+            "Script:onPlayerAttackHit"
+        )
     end
 end
 
@@ -567,13 +590,17 @@ end
 
 function Script:onGameAnyPlayerEnterGame(event)
     local playerUin = event.eventobjid
-    if not self.whitelistEnabled then return end
+    if not self.whitelistEnabled then
+        return
+    end
     -- 每 0.01 秒检测玩家准星前的白名单方块数量
     local timerTask = self:DoPeriodicTask(function()
         local cmpStructData = PlrDataMgr:GetPlrCmpStructData(playerUin, "limbSysCmp", "DATA")
         local count = self:countWhitelistBlocksInSight(playerUin, self.MAX_DIST)
-        if count == cmpStructData.lastBlockNum then goto skip
-        else cmpStructData.lastBlockNum = count
+        if count == cmpStructData.lastBlockNum then
+            goto skip
+        else
+            cmpStructData.lastBlockNum = count
         end
         for _, v in ipairs(Backpack:GetGunInstIdInBackpack(playerUin)) do
             local ret = Item:ModifyGunAttribute(v, GunAttr.Penetration, cmpStructData.lastBlockNum)
